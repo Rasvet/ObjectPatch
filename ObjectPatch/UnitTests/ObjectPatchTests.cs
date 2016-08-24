@@ -2,7 +2,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
-using System.Diagnostics;
 
 namespace UnitTests
 {
@@ -38,19 +37,13 @@ namespace UnitTests
 	[TestClass]
 	public class ObjectPatchUnitTests
 	{
-
 		[TestMethod]
 		public void TestIdenticalObjects()
 		{
 			byte[] b1 = new DeltaTest(100).Serialize();
 			byte[] b2 = new DeltaTest(100).Serialize();
 
-			ObjectPatch.ObjectPatch op = ObjectPatch.ObjectPatch.GeneratePatch(b1, b2);
-
-			Assert.IsTrue(op.GetPatchedLength() == b1.Length);
-
-			byte[] res = ObjectPatch.ObjectPatch.ApplyPatch(b1, op);
-			Assert.IsTrue(ArraysEqual(b2, res));
+			Assert.IsTrue(GeneratePatchAndApply(b1, b2));			
 		}
 
 		[TestMethod]
@@ -59,12 +52,7 @@ namespace UnitTests
 			byte[] b1 = new DeltaTest(2048).Serialize();
 			byte[] b2 = new DeltaTest(2048).Randomize(1000, 1100).Serialize();
 
-			ObjectPatch.ObjectPatch op = ObjectPatch.ObjectPatch.GeneratePatch(b1, b2);
-
-			Assert.IsTrue(op.GetPatchedLength() == b2.Length);
-
-			byte[] res = ObjectPatch.ObjectPatch.ApplyPatch(b1, op);
-			Assert.IsTrue(ArraysEqual(b2, res));
+			Assert.IsTrue(GeneratePatchAndApply(b1, b2));
 		}
 
 		[TestMethod]
@@ -73,38 +61,25 @@ namespace UnitTests
 			byte[] b1 = new DeltaTest(4096).Serialize();
 			byte[] b2 = new DeltaTest(4096).Randomize(1000, 1100).Randomize(2000, 2100).Serialize();
 
-			ObjectPatch.ObjectPatch op = ObjectPatch.ObjectPatch.GeneratePatch(b1, b2);
-
-			Assert.IsTrue(op.GetPatchedLength() == b2.Length);
-
-			byte[] res = ObjectPatch.ObjectPatch.ApplyPatch(b1, op);
-			Assert.IsTrue(ArraysEqual(b2, res));
+			Assert.IsTrue(GeneratePatchAndApply(b1, b2));
 		}
 
 		[TestMethod]
 		public void TestShorterMod()
 		{
-			byte[] b1 = new DeltaTest(80).Serialize();
+			byte[] b1 = new DeltaTest(120).Serialize();
 			byte[] b2 = new DeltaTest(100).Serialize();
 
-			ObjectPatch.ObjectPatch op = ObjectPatch.ObjectPatch.GeneratePatch(b1, b2);
-			Assert.IsTrue(op.GetPatchedLength() == b2.Length);
-
-			byte[] res = ObjectPatch.ObjectPatch.ApplyPatch(b1, op);
-			Assert.IsTrue(ArraysEqual(b2, res));
+			Assert.IsTrue(GeneratePatchAndApply(b1, b2));
 		}
 
 		[TestMethod]
 		public void TestShorterModDifferent()
 		{
-			byte[] b1 = new DeltaTest(80).Serialize();
+			byte[] b1 = new DeltaTest(120).Serialize();
 			byte[] b2 = new DeltaTest(100).Randomize(60, 80).Serialize();
 
-			ObjectPatch.ObjectPatch op = ObjectPatch.ObjectPatch.GeneratePatch(b1, b2);
-			Assert.IsTrue(op.GetPatchedLength() == b2.Length);
-
-			byte[] res = ObjectPatch.ObjectPatch.ApplyPatch(b1, op);
-			Assert.IsTrue(ArraysEqual(b2, res));
+			Assert.IsTrue(GeneratePatchAndApply(b1, b2));
 		}
 
 		[TestMethod]
@@ -112,12 +87,8 @@ namespace UnitTests
 		{
 			byte[] b1 = new DeltaTest(100).Serialize();
 			byte[] b2 = new DeltaTest(120).Serialize();
-			
-			ObjectPatch.ObjectPatch op = ObjectPatch.ObjectPatch.GeneratePatch(b1, b2);
-			Assert.IsTrue(op.GetPatchedLength() == b2.Length);
 
-			byte[] res = ObjectPatch.ObjectPatch.ApplyPatch(b1, op);
-			Assert.IsTrue(ArraysEqual(b2, res));
+			Assert.IsTrue(GeneratePatchAndApply(b1, b2));
 		}
 
 		[TestMethod]
@@ -126,14 +97,39 @@ namespace UnitTests
 			byte[] b1 = new DeltaTest(100).Serialize();
 			byte[] b2 = new DeltaTest(120).Randomize(50, 90).Serialize();
 
-			ObjectPatch.ObjectPatch op = ObjectPatch.ObjectPatch.GeneratePatch(b1, b2);
-			Assert.IsTrue(op.GetPatchedLength() == b2.Length);
-
-			byte[] res = ObjectPatch.ObjectPatch.ApplyPatch(b1, op);
-			Assert.IsTrue(ArraysEqual(b2, res));
+			Assert.IsTrue(GeneratePatchAndApply(b1, b2));
 		}
 
-		public static bool ArraysEqual(byte[] a, byte[] b)
+		private bool GeneratePatchAndApply(byte[] a, byte[] b)
+		{
+			int[] chunk_sizes = { 4, 8, 16, 32, 64, 128, 256, 512 };
+			for (int i = 0; i < chunk_sizes.Length; ++i)
+			{
+				ObjectPatch.ObjectPatch op = ObjectPatch.ObjectPatchRuntime.GeneratePatch(a, b, chunk_sizes[i]);
+
+				Assert.IsTrue(op.patchedLength == b.Length);
+
+				byte[] result = ObjectPatch.ObjectPatchRuntime.ApplyPatch(a, op);
+				if (!ArraysAreEqual(b, result))
+				{
+					Console.WriteLine("Failed to correctly patch with chunk size {0}", chunk_sizes[i]);
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private bool GeneratePatchAndApply(byte[] a, byte[] b, int chunk_size)
+		{
+			ObjectPatch.ObjectPatch op = ObjectPatch.ObjectPatchRuntime.GeneratePatch(a, b, chunk_size);
+
+			Assert.IsTrue(op.patchedLength == b.Length);
+
+			byte[] result = ObjectPatch.ObjectPatchRuntime.ApplyPatch(a, op);
+			return ArraysAreEqual(b, result);
+		}
+
+		public static bool ArraysAreEqual(byte[] a, byte[] b)
 		{
 			if (a.Length != b.Length)
 				return false;
